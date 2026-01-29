@@ -23,11 +23,14 @@ import org.apache.flink.api.common.ExecutionConfig;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.typeutils.InputTypeConfigurable;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.connector.base.metric.VstreamExpandMetricName;
 import org.apache.flink.runtime.state.FunctionInitializationContext;
 import org.apache.flink.runtime.state.FunctionSnapshotContext;
 import org.apache.flink.streaming.api.checkpoint.CheckpointedFunction;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.vstream.metrics.VstreamMeter;
+import org.apache.flink.vstream.metrics.VstreamMetricView;
 
 import javax.annotation.Nonnull;
 
@@ -39,7 +42,7 @@ public class GenericJdbcSinkFunction<T> extends RichSinkFunction<T>
         implements CheckpointedFunction, InputTypeConfigurable {
     private final JdbcOutputFormat<T, ?, ?> outputFormat;
     private JdbcOutputSerializer<T> serializer;
-
+    protected transient VstreamMeter recordsNumOut;
     public GenericJdbcSinkFunction(@Nonnull JdbcOutputFormat<T, ?, ?> outputFormat) {
         this.outputFormat = Preconditions.checkNotNull(outputFormat);
     }
@@ -51,10 +54,13 @@ public class GenericJdbcSinkFunction<T> extends RichSinkFunction<T>
         serializer.withObjectReuseEnabled(
                 getRuntimeContext().getExecutionConfig().isObjectReuseEnabled());
         outputFormat.open(serializer);
+        this.recordsNumOut = getRuntimeContext().getMetricGroup()
+                .meter(VstreamExpandMetricName.VSTREAM_SINK_NUM_RECORDS_OUT, new VstreamMetricView());
     }
 
     @Override
     public void invoke(T value, Context context) throws IOException {
+        recordsNumOut.markEvent();
         outputFormat.writeRecord(value);
     }
 
